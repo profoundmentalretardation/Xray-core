@@ -57,7 +57,7 @@ func init() {
 
 		c := config.(*Config)
 
-		validator := new(vless.MemoryValidator)
+		validator := vless.NewMemoryValidator()
 		for _, user := range c.Users {
 			u, err := user.ToMemoryUser()
 			if err != nil {

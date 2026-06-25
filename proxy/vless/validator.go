@@ -2,8 +2,8 @@ package vless
 
 import (
 	"strings"
-	"sync"
 
+	"github.com/puzpuzpuz/xsync/v4"
 	"github.com/xtls/xray-core/common/errors"
 	"github.com/xtls/xray-core/common/protocol"
 	"github.com/xtls/xray-core/common/uuid"
@@ -25,10 +25,19 @@ func ProcessUUID(id [16]byte) [16]byte {
 }
 
 // MemoryValidator stores valid VLESS users.
+// Must be created with NewMemoryValidator: unlike sync.Map, the zero value of
+// xsync.Map is not usable.
 type MemoryValidator struct {
 	// Considering email's usage here, map + sync.Mutex/RWMutex may have better performance.
-	email sync.Map
-	users sync.Map
+	email *xsync.Map[string, *protocol.MemoryUser]
+	users *xsync.Map[[16]byte, *protocol.MemoryUser]
+}
+
+func NewMemoryValidator() *MemoryValidator {
+	return &MemoryValidator{
+		email: xsync.NewMap[string, *protocol.MemoryUser](),
+		users: xsync.NewMap[[16]byte, *protocol.MemoryUser](),
+	}
 }
 
 // Add a VLESS user, Email must be empty or unique.
@@ -54,7 +63,7 @@ func (v *MemoryValidator) Del(e string) error {
 		return errors.New("User ", e, " not found.")
 	}
 	v.email.Delete(le)
-	v.users.Delete(ProcessUUID(u.(*protocol.MemoryUser).Account.(*MemoryAccount).ID.UUID()))
+	v.users.Delete(ProcessUUID(u.Account.(*MemoryAccount).ID.UUID()))
 	return nil
 }
 
@@ -62,7 +71,7 @@ func (v *MemoryValidator) Del(e string) error {
 func (v *MemoryValidator) Get(id uuid.UUID) *protocol.MemoryUser {
 	u, _ := v.users.Load(ProcessUUID(id))
 	if u != nil {
-		return u.(*protocol.MemoryUser)
+		return u
 	}
 	return nil
 }
@@ -72,7 +81,7 @@ func (v *MemoryValidator) GetByEmail(email string) *protocol.MemoryUser {
 	email = strings.ToLower(email)
 	u, _ := v.email.Load(email)
 	if u != nil {
-		return u.(*protocol.MemoryUser)
+		return u
 	}
 	return nil
 }
@@ -80,8 +89,8 @@ func (v *MemoryValidator) GetByEmail(email string) *protocol.MemoryUser {
 // Get all users
 func (v *MemoryValidator) GetAll() []*protocol.MemoryUser {
 	u := make([]*protocol.MemoryUser, 0, 100)
-	v.email.Range(func(key, value interface{}) bool {
-		u = append(u, value.(*protocol.MemoryUser))
+	v.email.Range(func(key string, value *protocol.MemoryUser) bool {
+		u = append(u, value)
 		return true
 	})
 	return u
@@ -89,10 +98,5 @@ func (v *MemoryValidator) GetAll() []*protocol.MemoryUser {
 
 // Get users count
 func (v *MemoryValidator) GetCount() int64 {
-	var c int64 = 0
-	v.email.Range(func(key, value interface{}) bool {
-		c++
-		return true
-	})
-	return c
+	return int64(v.email.Size())
 }
